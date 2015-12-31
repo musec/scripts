@@ -1,0 +1,198 @@
+#!/bin/sh
+
+#
+# Configuration (can be overridden with environment variables):
+#
+
+: ${prefix:="/usr/local"}
+: ${pkg_repo_dir:="${prefix}/etc/pkg/repos"}
+
+print_usage()
+{
+	echo "Usage: $0 <server|workstation|list of package sets>"
+	echo ""
+	echo "Available package sets:"
+	echo "  admin          administrative essentials (sudo, tmux...)"
+	echo "  browsers       Web browsers"
+	echo "  desktop        X11, fonts, desktop environments"
+	echo "  development    common development tools"
+	echo "  productivity   Office, PIM, TeX"
+	echo "  shells         lots of shells"
+}
+
+#
+# Machine role (server or workstation):
+#
+role=$1
+if [ "${role}" == "workstation" ]; then
+	package_sets="admin browsers desktop development productivity shells"
+
+elif [ "${role}" == "server" ]; then
+	package_sets="admin shells"
+
+elif [ "${role}" == "" ]; then
+	print_usage
+	exit 1
+
+else
+	package_sets=$*
+fi
+
+#
+# Static package sets:
+#
+
+admin="
+	autossh
+	git-subversion
+	sudo
+	tmux
+"
+
+browsers="
+	chromium
+	firefox
+"
+
+desktop="
+	xorg
+
+	comfortaa-ttf
+	consolamono-ttf
+	croscorefonts
+	freefont-ttf
+	gnu-unifont-ttf
+	inconsolata-ttf
+	liberation-fonts-ttf
+	proggy_fonts-ttf
+	roboto-fonts-ttf
+	sourcecodepro-ttf
+	sourcesanspro-ttf
+	tlwg-ttf
+	urwfonts-ttf
+	vollkorn-ttf
+
+	dwm
+
+	enlightenment
+
+	fluxbox
+
+	fvwm
+
+	gnome3
+	gnome-icons
+	gnome-system-monitor
+
+	kde
+
+	lxde-meta
+
+	openbox
+
+	windowmaker
+
+	xfce
+	xfce4-cpugraph-plugin
+	xfce4-datetime-plugin
+	xfce4-mount-plugin
+	xfce4-taskmanager
+	xfce4-wm-themes
+"
+
+development="
+	cmake
+	colordiff
+	eclipse
+	git-subversion
+	go
+	ninja
+	npm
+	rust
+	subversion
+"
+
+productivity="
+	epdfview
+	libreoffice
+	texlive-full
+	thunderbird
+"
+
+shells="
+	ksh93
+	mksh
+	pdksh
+	zsh
+"
+
+
+#
+# First, set up pkg itself:
+#
+
+echo -n "Configuring 'allendale' pkg mirror... "
+mkdir -p ${pkg_repo_dir}
+
+cat > ${pkg_repo_dir}/allendale.conf << EOF
+allendale: {
+	url: "http://allendale.engr.mun.ca:8182/\${ABI}/latest",
+	signature_type: "fingerprints",
+	fingerprints: "/usr/share/keys/pkg",
+	enabled: yes
+}
+EOF
+
+cat > ${pkg_repo_dir}/FreeBSD.conf << EOF
+FreeBSD { enabled: no }
+EOF
+
+echo "done."
+
+echo -n "Bootstrapping/updating 'pkg'... "
+ASSUME_ALWAYS_YES=yes pkg update --quiet || exit 1
+echo "done."
+
+
+#
+# Next, install the requested packages:
+#
+
+root_packages=""
+
+for package_set in ${package_sets}
+do
+	eval "package_names=\${$package_set}"
+	root_packages="${root_packages} ${package_names}"
+done
+
+root_packages="`echo ${root_packages} | sort | uniq`"
+root_package_count="`echo ${root_packages} | wc -w | xargs`"
+
+if [ ${root_package_count} == 0 ]
+then
+	echo "Error: no root packages specified!"
+	echo ""
+	print_usage
+	exit 1
+fi
+
+echo "Installing '${package_sets}':"
+echo "-----------------------------------------------------------------------"
+pkg install --yes ${root_packages} || exit 1
+echo "-----------------------------------------------------------------------"
+echo "Installed ${root_package_count} root packages and their dependences."
+
+
+#
+# Finally, finish configuration:
+#
+echo -n "Final configuration... "
+
+cat > ${prefix}/etc/sudoers.d/localadmin << EOF
+root ALL=(ALL) ALL
+%localadmin ALL=(ALL) ALL
+%wheel ALL=(ALL) ALL
+EOF
+
+echo "done."
