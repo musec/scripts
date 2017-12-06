@@ -1,0 +1,42 @@
+#!/bin/sh
+
+USERNAME=$1
+SSH_KEY_FILE=$2
+
+if [ "${USERNAME}" = "" ] || [ "${SSH_KEY_FILE}" = "" ]
+then
+	echo "Usage:  $0 <username> <SSH key file>"
+	exit 1
+fi
+
+if ! [ -f "${SSH_KEY_FILE}" ]
+then
+	echo "Invalid SSH key file: ${SSH_KEY_FILE}"
+	exit 1
+fi
+
+echo "Creating ${USERNAME}@`hostname`..."
+echo "${USERNAME}::::::::::" | adduser -f - -G musec -w no || exit 1
+
+echo "Copying SSH key into place..."
+mkdir /home/${USERNAME}/.ssh || exit 1
+cp ${SSH_KEY_FILE} /home/${USERNAME}/.ssh/authorized_keys || exit 1
+chown -R ${USERNAME}:musec /home/${USERNAME} || exit 1
+
+echo "Creating build directory: /var/build/${USERNAME}..."
+mkdir /var/build/${USERNAME} || exit 1
+chown ${USERNAME}:musec /var/build/${USERNAME} || exit 1
+
+echo "Creating cluster root: /var/cluster/${USERNAME}..."
+zfs create zroot/var/cluster/${USERNAME} || exit 1
+chown ${USERNAME}:musec /var/cluster/${USERNAME} || exit 1
+zfs set org.freebsd:owner=${USERNAME} zroot/var/cluster/${USERNAME} || exit 1
+zfs allow -u ${USERNAME} mount zroot/var/cluster/${USERNAME} || exit 1
+
+echo "Remounting /var/cluster/${USERNAME} as user ${USERNAME}..."
+zfs unmount zroot/var/cluster/${USERNAME} || exit 1
+# chown the mountpoint too, not just the mounted filesystem...
+chown ${USERNAME}:musec /var/cluster/${USERNAME} || exit 1
+su - ${USERNAME} -c "zfs mount zroot/var/cluster/${USERNAME}" || exit 1
+
+echo "New MUSEC user successfully created!"
